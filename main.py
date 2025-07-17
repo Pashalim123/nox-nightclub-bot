@@ -1,7 +1,8 @@
 import os
+import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-
+from telegram.ext import Application, CommandHandler, ContextTypes
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_keyboard = [['Забронировать столик'], ['Меню'], ['Оставить отзыв']]
     markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
