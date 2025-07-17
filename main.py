@@ -9,6 +9,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=markup
     )
 
-app = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
+import os
+application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
 app.add_handler(CommandHandler("start", start))
 app.run_polling()
