@@ -1,32 +1,47 @@
 import os
-import logging
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes
-
-# Настройка логирования (можно смотреть логи в Render)
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    ContextTypes, ConversationHandler, filters
 )
 
-# Команда /start
+LANGUAGE, BOOK_ZONE, BOOK_TABLE, BOOK_DATE, BOOK_TIME, BOOK_PEOPLE, CONFIRM = range(7)
+user_lang = {}
+
+zones = {
+    "VIP": ["VIP-1", "VIP-2"],
+    "Бар": ["Бар-1", "Бар-2"],
+    "Танцпол": ["Танц-1", "Танц-2"],
+    "Балкон": ["Балкон-1"]
+}
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply_keyboard = [
-        ['🪑 Забронировать столик'],
-        ['📋 Меню'],
-        ['✍️ Оставить отзыв']
-    ]
-    markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
-    await update.message.reply_text(
-        f"Привет, {update.effective_user.first_name}! Добро пожаловать в NOX Nightclub!",
-        reply_markup=markup
-    )
+    keyboard = [["🇷🇺 Русский", "🇬🇧 English"]]
+    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("Выберите язык / Choose your language:", reply_markup=markup)
+    return LANGUAGE
 
-# Инициализация бота
-app = Application.builder().token(os.getenv("BOT_TOKEN")).build()
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lang = update.message.text
+    user_lang[update.effective_user.id] = lang
+    keyboard = [["🪑 Забронировать столик", "📋 Меню"], ["✍️ Оставить отзыв"]]
+    await update.message.reply_text("Главное меню:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+    return ConversationHandler.END
 
-# Обработчики
-app.add_handler(CommandHandler("start", start))
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📋 Наше меню:
+- Бургер: 400 KGS
+- Коктейль: 300 KGS")
 
-# Запуск
+async def review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✍️ Напишите ваш отзыв:")
+
+app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
+app.add_handler(ConversationHandler(
+    entry_points=[CommandHandler("start", start)],
+    states={LANGUAGE: [MessageHandler(filters.TEXT, set_language)]},
+    fallbacks=[]
+))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex("📋 Меню"), menu))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex("✍️ Оставить отзыв"), review))
 app.run_polling()
