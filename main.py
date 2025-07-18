@@ -29,7 +29,7 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📋 Наше меню:
+    await update.message.reply_text("📋 Наше меню:"
 - Бургер: 400 KGS
 - Коктейль: 300 KGS")
 
