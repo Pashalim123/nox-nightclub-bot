@@ -1,4 +1,3 @@
-python
 from PIL import Image, ImageDraw
 from io import BytesIO
 
