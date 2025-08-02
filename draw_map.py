@@ -1,4 +1,4 @@
-```python
+python
 from PIL import Image, ImageDraw
 from io import BytesIO
 
@@ -25,4 +25,3 @@ def draw_map(booked_seats: list) -> BytesIO:
     img.save(bio, 'PNG')
     bio.seek(0)
     return bio
-```
