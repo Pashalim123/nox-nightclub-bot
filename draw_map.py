@@ -1,30 +1,28 @@
+```python
 from PIL import Image, ImageDraw
+from io import BytesIO
 
-# Настройте эти координаты под вашу схему (пример)
-SEAT_COORDS = {
-    1: (100, 200),
-    2: (100, 300),
-    3: (100, 400),
-    4: (400, 300),
-}
-
-def draw_map(reservations: dict, base_path="hall_base.png", out_path="hall_map.png"):
+def draw_map(booked_seats: list) -> BytesIO:
     """
-    reservations: {номер_стола: True/False}, True = занято, False = свободно
+    Рисует простую схему зала 4x4,
+    отмечая индексы из booked_seats красным, остальные — зелёным.
+    Возвращает BytesIO с PNG.
     """
-    im = Image.open(base_path).convert("RGBA")
-    draw = ImageDraw.Draw(im)
-    r = 15  # радиус точки
-
-    for seat, (x, y) in SEAT_COORDS.items():
-        color = (255, 0, 0, 255) if reservations.get(seat) else (0, 200, 0, 255)
-        draw.ellipse((x-r, y-r, x+r, y+r), fill=color)
-
-    im.save(out_path)
-    return out_path
-
-if __name__ == "__main__":
-    # тестовый вызов
-    demo = {1: True, 2: False, 3: True, 4: False}
-    draw_map(demo)
-    print("Saved hall_map.png")
+    size = 400
+    img = Image.new('RGB',(size,size),'white')
+    draw = ImageDraw.Draw(img)
+    n = 4
+    cell = size // n
+    for i in range(n):
+        for j in range(n):
+            idx = i*n + j
+            x0, y0 = j*cell, i*cell
+            x1, y1 = x0+cell, y0+cell
+            color = 'red' if idx in booked_seats else 'green'
+            draw.rectangle([x0+5,y0+5,x1-5,y1-5], fill=color)
+            draw.text((x0+10,y0+10), str(idx+1), fill='white')
+    bio = BytesIO()
+    img.save(bio, 'PNG')
+    bio.seek(0)
+    return bio
+```
