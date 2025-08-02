@@ -231,8 +231,11 @@ def main():
 
     app.add_handler(conv)
 
-    # Запускаем polling (удаляем старые апдейты) — чтобы не было Conflict
+   # Запуск бота
+if __name__ == "__main__":
+    # сразу же удаляем webhook (если он был установлен ранее)
+    # и сбрасываем все накопившиеся апдейты
+    # прежде чем стартовать polling
+    app.bot.delete_webhook()
     app.run_polling(drop_pending_updates=True)
 
-if __name__ == "__main__":
-    main()
