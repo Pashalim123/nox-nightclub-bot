@@ -204,7 +204,7 @@ async def book_table_cb(update, ctx):
     data=ctx.user_data; data["name"]=users[uid]["name"]
     reservations.append(data.copy())
     await ctx.bot.send_message(
-        chat_id=os.getenv("GROUP_CHAT_ID"),
+        chat_id=os.getenv("-1002705399393"),
         text=f"Новая бронь: {data}"
     )
     return ConversationHandler.END
@@ -274,7 +274,7 @@ async def review_text(update, ctx):
     name = users[uid]["name"] if not ctx.user_data.get("anon") else "Аноним"
     await update.message.reply_text(t(uid,"review_thanks"))
     await ctx.bot.send_message(
-        chat_id=os.getenv("GROUP_CHAT_ID"),
+        chat_id=os.getenv("-1002705399393"),
         text=f"Новый отзыв от {name}:\n{text}"
     )
     return ConversationHandler.END
@@ -286,7 +286,7 @@ async def cancel(update, ctx):
     return ConversationHandler.END
 
 def main():
-    token=os.getenv("BOT_TOKEN")
+    token=os.getenv("8003288203:AAHWtHosG1kKRf0yd123i4yVn0Vx7GMakBA")
     app = ApplicationBuilder().token(token).build()
 
     conv = ConversationHandler(
