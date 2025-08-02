@@ -200,6 +200,7 @@ async def book_table_cb(update, ctx):
     ctx.user_data["table"]=tbl
     await update.callback_query.edit_message_text(t(uid,"confirm_booking").format(**ctx.user_data))
     # сохраняем и уведомляем
+    
     data=ctx.user_data; data["name"]=users[uid]["name"]
     reservations.append(data.copy())
     await ctx.bot.send_message(
@@ -207,6 +208,29 @@ async def book_table_cb(update, ctx):
         text=f"Новая бронь: {data}"
     )
     return ConversationHandler.END
+# Пример для брони (внутри функции confirm_booking)
+# после формирования текста confirm_text:
+confirm_text = texts[lang]["confirm_booking"].format(**ctx.user_data)
+# Добавим дату создания и имя гостя
+from datetime import datetime
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+guest = users[uid]["name"]
+group_msg = (
+    f"🆕 <b>Новая бронь</b>\n"
+    f"Гость: {guest}\n"
+    f"Дата запроса: {timestamp}\n"
+    f"Зал: {ctx.user_data['zone']}\n"
+    f"Столик: {ctx.user_data['table']}\n"
+    f"Время брони: {ctx.user_data['datetime']}\n"
+    f"Гостей: {ctx.user_data['people']}\n"
+    f"Предоплата: 1000 сом"
+)
+await context.bot.send_message(
+    chat_id=os.getenv(""),
+    text=group_msg,
+    parse_mode="HTML"
+)
+
 
 # AI-меню
 async def ai_allergy(update, ctx):
