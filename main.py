@@ -1,261 +1,238 @@
 # main.py
-
 import os
 import logging
+import requests
 from datetime import datetime
 
-from telegram import (
-    Update,
-    ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
-    KeyboardButton,
-)
+from PIL import Image, ImageDraw               # Pillow вместо PIL
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    ConversationHandler,
-    ContextTypes,
     filters,
+    ContextTypes,
+    ConversationHandler,
 )
-from draw_map import draw_map
 
-# ==== Настройка логов ====
+# === Настройка логирования ===
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s — %(name)s — %(levelname)s — %(message)s",
+    level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
-# ==== Константы состояний ====
+# === Константы и чтение из .env ===
+TOKEN = os.getenv("BOT_TOKEN")
+GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID", "0"))
+
+# Перед запуском polling удаляем любой webhook, чтобы не было конфликта
+if TOKEN:
+    requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook?drop_pending_updates=true")
+
+# === Состояния для ConversationHandler ===
 (
-    LANG, ASK_NAME, MENU,
-    BOOK_DATE, BOOK_TIME, BOOK_COUNT, BOOK_TABLE, BOOK_CONFIRM,
-    AI_ALLERGY, AI_MENU,
-    MUSIC_REQUEST, MUSIC_CONFIRM,
-    REVIEW_CHOOSE, REVIEW_TEXT,
-) = range(14)
+    LANG, NAME, MENU,
+    BOOK_DATE, BOOK_TIME, BOOK_GUESTS, BOOK_ZONE, BOOK_CONFIRM,
+    AI_ALLERGY,
+    MUSIC_TITLE, MUSIC_CONFIRM,
+    REVIEW_TEXT, REVIEW_ANON,
+) = range(13)
 
-# Схема зала — координаты столиков на карте (пример)
-SEAT_COORDS = {
-    1: (100, 200),
-    2: (100, 350),
-    3: (100, 500),
-    4: (400, 350),
-}
+# === Хелперы для отрисовки схемы зала ===
+def draw_map():
+    """
+    Создаём простую карту зала 400×300 с подписями зон.
+    🔴 / 🟢 будем рисовать потом поверх, когда придёт статус.
+    """
+    img = Image.new("RGB", (400, 300), "white")
+    d = ImageDraw.Draw(img)
+    # Рисуем 4 зоны примитивно
+    d.rectangle([( 20,  20), (180, 140)], outline="black")
+    d.text(( 30,  30), "VIP", fill="black")
+    d.rectangle([(220,  20), (380, 140)], outline="black")
+    d.text((230,  30), "BAR", fill="black")
+    d.rectangle([( 20, 160), (180, 280)], outline="black")
+    d.text(( 30, 170), "Балкон", fill="black")
+    d.rectangle([(220, 160), (380, 280)], outline="black")
+    d.text((230, 170), "Танцпол", fill="black")
+    return img
 
-# ID группы для уведомлений
-GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
-# Ссылка на оплату предоплаты/треков (заглушка)
-PAYMENT_LINK = "https://example.com/pay?amount="
+# === Обработчики ===
 
-# ==== /start ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    kb = [["Русский", "English"]]
+    keyboard = [["Русский", "English"]]
     await update.message.reply_text(
-        "Выберите язык / Choose language:", 
-        reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True)
+        "Выберите язык / Choose language:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
     return LANG
 
-async def choose_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang = update.message.text.lower()
-    context.user_data["lang"] = "ru" if "рус" in lang else "en"
-    await update.message.reply_text(
-        {"ru": "Как к вам обращаться?", "en": "What is your name?"}[context.user_data["lang"]],
-        reply_markup=ReplyKeyboardRemove()
-    )
-    return ASK_NAME
+async def lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    txt = update.message.text
+    context.user_data["lang"] = "ru" if "Рус" in txt else "en"
+    prompt = "Как я могу к вам обращаться?" if context.user_data["lang"]=="ru" else "How can I call you?"
+    await update.message.reply_text(prompt, reply_markup=ReplyKeyboardMarkup([], remove_keyboard=True))
+    return NAME
 
-async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    name = update.message.text.strip()
-    context.user_data["name"] = name
-    # Главное меню
-    kb = [
+async def name_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["name"] = update.message.text
+    name = context.user_data["name"]
+    lang = context.user_data["lang"]
+    greet = f"Привет, {name}! Добро пожаловать в NOX." if lang=="ru" else f"Hello, {name}! Welcome to NOX."
+    menu = [
         ["🪑 Забронировать столик", "📅 AI-меню"],
         ["🎵 Заказать музыку", "✍️ Оставить отзыв"],
     ]
     await update.message.reply_text(
-        f"{name}, добро пожаловать! Что выберем?",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+        greet,
+        reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True)
     )
     return MENU
 
-# ==== МЕНЮ ====
-async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text
-    if "забронир" in text.lower():
-        await update.message.reply_text("Введите дату брони (YYYY-MM-DD):")
+    lang = context.user_data["lang"]
+    if text.startswith("🪑"):
+        await update.message.reply_text("Введите дату бронирования (YYYY-MM-DD):")
         return BOOK_DATE
-    if "ai" in text.lower() or "меню" in text.lower():
-        await update.message.reply_text("Есть ли у вас аллергии? Перечислите ингредиенты, или напишите `нет`.")
+    if text.startswith("📅"):
+        await update.message.reply_text(
+            "Укажите аллергии, ингредиенты через запятую:",
+        )
         return AI_ALLERGY
-    if "музык" in text.lower():
-        await update.message.reply_text("Какой трек хотите заказать? (House/Pop/RnB/Techno)")
-        return MUSIC_REQUEST
-    if "отзыв" in text.lower():
+    if text.startswith("🎵"):
+        await update.message.reply_text("Введите название трека для заказа:")
+        return MUSIC_TITLE
+    if text.startswith("✍️"):
         await update.message.reply_text("Введите ваш отзыв:")
         return REVIEW_TEXT
+    # на всякий случай
     await update.message.reply_text("Пожалуйста, выберите пункт меню.")
     return MENU
 
-# ==== БРОНИРОВАНИЕ ====
-async def book_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["date"] = update.message.text.strip()
+# — Бронирование —
+async def book_date(update, context) -> int:
+    context.user_data["book_date"] = update.message.text
     await update.message.reply_text("Введите время (HH:MM):")
     return BOOK_TIME
 
-async def book_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["time"] = update.message.text.strip()
-    await update.message.reply_text("Сколько гостей?")
-    return BOOK_COUNT
+async def book_time(update, context) -> int:
+    context.user_data["book_time"] = update.message.text
+    await update.message.reply_text("Сколько человек?")
+    return BOOK_GUESTS
 
-async def book_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["count"] = update.message.text.strip()
-    # Предполагаем 4 стола
-    kb = [[KeyboardButton(f"Стол {i}")] for i in SEAT_COORDS.keys()]
-    await update.message.reply_text("Выберите столик:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
-    return BOOK_TABLE
+async def book_guests(update, context) -> int:
+    context.user_data["book_guests"] = update.message.text
+    # присылаем карту зала
+    img = draw_map()
+    with open("hall_map.png","wb") as f:
+        img.save(f, format="PNG")
+    await update.message.reply_photo(photo=open("hall_map.png","rb"), caption="Выберите зону: VIP, BAR, Балкон, Танцпол")
+    return BOOK_ZONE
 
-async def book_table(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # Извлекаем номер столика
-    table = int(update.message.text.replace("Стол ", ""))
-    context.user_data["table"] = table
-    # Подтверждение
-    d = context.user_data["date"]
-    t = context.user_data["time"]
-    c = context.user_data["count"]
-    tb = context.user_data["table"]
-    await update.message.reply_text(
-        f"Вы выбрали:\nДата: {d}\nВремя: {t}\nГостей: {c}\nСтол: {tb}\nПодтвердить? (да/нет)",
-        reply_markup=ReplyKeyboardMarkup([["да","нет"]], resize_keyboard=True)
+async def book_zone(update, context) -> int:
+    context.user_data["book_zone"] = update.message.text
+    d = context.user_data
+    info = (
+        f"Дата: {d['book_date']}\n"
+        f"Время: {d['book_time']}\n"
+        f"Гостей: {d['book_guests']}\n"
+        f"Зона: {d['book_zone']}\n"
+        "Подтвердить бронь и оплатить 1000 сом?"
     )
+    kb = [["Подтвердить","Отмена"]]
+    await update.message.reply_text(info, reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True))
     return BOOK_CONFIRM
 
-async def book_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    ans = update.message.text.lower()
-    if ans != "да":
-        await update.message.reply_text("Бронирование отменено.", reply_markup=ReplyKeyboardRemove())
-        return ConversationHandler.END
+async def book_confirm(update, context) -> int:
+    if update.message.text == "Подтвердить":
+        await update.message.reply_text("Спасибо, ваша бронь подтверждена! Ссылка для оплаты: <QR-CODE-LINK>")
+        # уведомляем группу
+        d = context.user_data
+        msg = (
+            f"📌 *Новая бронь*\n"
+            f"👤 {d['name']}\n"
+            f"📅 {d['book_date']} {d['book_time']}\n"
+            f"👥 {d['book_guests']} чел.\n"
+            f"🏷 {d['book_zone']}\n"
+        )
+        await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("Отменено.")
+    return MENU
 
-    # Генерация карты
-    # Собираем простой статус: занятое — только что занят.
-    reservations = {i: (i == context.user_data["table"]) for i in SEAT_COORDS}
-    map_file = draw_map(reservations, base_path="hall_base.png", out_path="hall_map.png")
+# — AI-меню —
+async def ai_allergy(update, context) -> int:
+    alle = [x.strip().lower() for x in update.message.text.split(",")]
+    context.user_data["allergies"] = alle
+    # здесь можно подгрузить реальное меню из БД
+    full_menu = ["Салат Цезарь", "Пицца 4 сыра", "Бургер с говядиной"]
+    ok = [item for item in full_menu if not any(a in item.lower() for a in alle)]
+    await update.message.reply_text("Доступные блюда:\n" + "\n".join(ok))
+    return MENU
 
-    # Отправляем гостю
-    await context.bot.send_photo(
-        chat_id=update.effective_chat.id,
-        photo=open(map_file, "rb"),
-        caption="Схема зала: 🔴 занято, 🟢 свободно",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-    # Уведомление в группу
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-    msg = (
-        f"🪑 <b>Новая бронь</b>\n"
-        f"Гость: {context.user_data['name']}\n"
-        f"Дата/Время: {context.user_data['date']} {context.user_data['time']}\n"
-        f"Гостей: {context.user_data['count']}\n"
-        f"Стол: {context.user_data['table']}\n"
-        f"Время: {ts}"
-    )
-    await context.bot.send_message(
-        chat_id=GROUP_CHAT_ID,
-        text=msg,
-        parse_mode="HTML"
-    )
-
-    await update.message.reply_text("Ваша бронь подтверждена! Спасибо.")
-    return ConversationHandler.END
-
-# ==== AI-МЕНЮ ====
-async def ai_allergy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["allergy"] = update.message.text.strip().lower()
-    # Заглушка: просто отдаем меню
-    menu_text = (
-        "Наше меню:\n"
-        "- Кесадилья с курицей\n"
-        "- Пицца Маргарита\n"
-        "- Салат Цезарь\n"
-        # ...
-    )
-    await update.message.reply_text(menu_text, reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
-
-# ==== ЗАКАЗ МУЗЫКИ ====
-async def music_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["track"] = update.message.text.strip()
-    await update.message.reply_text(
-        f"Вы заказываете: {context.user_data['track']}\n"
-        "Сумма 1000 KGS. Оплатить? (да/нет)"
-    )
+# — Музыка —
+async def music_title(update, context) -> int:
+    context.user_data["music_title"] = update.message.text
+    await update.message.reply_text("Подтвердите заказ трека и оплату 1000 сом:", reply_markup=ReplyKeyboardMarkup([["OK","Отменить"]], one_time_keyboard=True))
     return MUSIC_CONFIRM
 
-async def music_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if update.message.text.lower() == "да":
-        link = PAYMENT_LINK + "1000"
-        await update.message.reply_text(f"Ссылка для оплаты: {link}")
-        # После оплаты (вручную) администратор нажимает кнопку, но у нас просто уведомляем сразу:
-        await context.bot.send_message(
-            chat_id=GROUP_CHAT_ID,
-            text=f"🎵 Заказ музыки: {context.user_data['track']} от {context.user_data['name']}"
-        )
-        await update.message.reply_text("Спасибо! Ваш заказ получен.")
+async def music_confirm(update, context) -> int:
+    if update.message.text == "OK":
+        title = context.user_data["music_title"]
+        await update.message.reply_text("Трек заказан, спасибо!")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        msg = f"🎵 *Заказ музыки*\n▶️ {title}\n👤 {context.user_data['name']}\n⏰ {now}"
+        await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg, parse_mode="Markdown")
     else:
-        await update.message.reply_text("Заказ отменён.")
-    return ConversationHandler.END
+        await update.message.reply_text("Отменено.")
+    return MENU
 
-# ==== ОСТАВИТЬ ОТЗЫВ ====
-async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    review = update.message.text.strip()
-    anon = False
-    await context.bot.send_message(
-        chat_id=GROUP_CHAT_ID,
-        text=(
-            f"✍️ Отзыв\n"
-            f"{'(аноним)' if anon else context.user_data['name']}: {review}"
-        )
-    )
-    await update.message.reply_text("Спасибо за ваш отзыв!", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
+# — Отзывы —
+async def review_text(update, context) -> int:
+    context.user_data["review_text"] = update.message.text
+    kb = [["Анонимно","С именем"]]
+    await update.message.reply_text("Как отправить отзыв?", reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True))
+    return REVIEW_ANON
 
-# ==== ОТМЕНА ====
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Операция отменена.", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
+async def review_anon(update, context) -> int:
+    choice = update.message.text
+    text = context.user_data["review_text"]
+    if choice == "С именем":
+        text = f"{context.user_data['name']}: {text}"
+    await context.bot.send_message(chat_id=GROUP_CHAT_ID, text="💬 *Новый отзыв*\n" + text, parse_mode="Markdown")
+    await update.message.reply_text("Спасибо за отзыв!")
+    return MENU
 
-# ==== Основная функция ====
+# === Запуск приложения ===
 def main():
-    token = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            LANG: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_lang)],
-            ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
-            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_choice)],
-
-            BOOK_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, book_date)],
-            BOOK_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, book_time)],
-            BOOK_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, book_count)],
-            BOOK_TABLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, book_table)],
-            BOOK_CONFIRM: [MessageHandler(filters.Regex("^(да|нет)$"), book_confirm)],
-
-            AI_ALLERGY: [MessageHandler(filters.TEXT & ~filters.COMMAND, ai_allergy)],
-
-            MUSIC_REQUEST: [MessageHandler(filters.TEXT & ~filters.COMMAND, music_request)],
-            MUSIC_CONFIRM: [MessageHandler(filters.Regex("^(да|нет)$"), music_confirm)],
-
-            REVIEW_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_text)],
+            LANG:           [MessageHandler(filters.TEXT & ~filters.COMMAND, lang_chosen)],
+            NAME:           [MessageHandler(filters.TEXT & ~filters.COMMAND, name_chosen)],
+            MENU:           [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler)],
+            BOOK_DATE:      [MessageHandler(filters.TEXT & ~filters.COMMAND, book_date)],
+            BOOK_TIME:      [MessageHandler(filters.TEXT & ~filters.COMMAND, book_time)],
+            BOOK_GUESTS:    [MessageHandler(filters.TEXT & ~filters.COMMAND, book_guests)],
+            BOOK_ZONE:      [MessageHandler(filters.TEXT & ~filters.COMMAND, book_zone)],
+            BOOK_CONFIRM:   [MessageHandler(filters.TEXT & ~filters.COMMAND, book_confirm)],
+            AI_ALLERGY:     [MessageHandler(filters.TEXT & ~filters.COMMAND, ai_allergy)],
+            MUSIC_TITLE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, music_title)],
+            MUSIC_CONFIRM:  [MessageHandler(filters.TEXT & ~filters.COMMAND, music_confirm)],
+            REVIEW_TEXT:    [MessageHandler(filters.TEXT & ~filters.COMMAND, review_text)],
+            REVIEW_ANON:    [MessageHandler(filters.TEXT & ~filters.COMMAND, review_anon)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
+        fallbacks=[CommandHandler("start", start)],
     )
 
     app.add_handler(conv)
-    app.run_polling()
+
+    # Запускаем polling (удаляем старые апдейты) — чтобы не было Conflict
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
