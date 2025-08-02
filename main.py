@@ -205,8 +205,10 @@ async def review_anon(update, context) -> int:
     return MENU
 
 # === Запуск приложения ===
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+#def main():
+#    app = ApplicationBuilder().token(TOKEN).build()
+    def main():
+    application = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -229,9 +231,7 @@ def main():
     )
 
     app.add_handler(conv)
-    #Удалять тут
-    def main():
-    application = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
+    
     # <-- здесь добавляете все ваши CommandHandler, CallbackQueryHandler и т.д.
     return application
 
