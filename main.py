@@ -1,4 +1,4 @@
-```python
+python
 import os
 import logging
 from datetime import datetime
@@ -229,7 +229,4 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
-```
-
----
+    main()---
