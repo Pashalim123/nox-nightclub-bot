@@ -1,4 +1,3 @@
-# main.py
 import os
 import logging
 import requests
@@ -230,12 +229,20 @@ def main():
     )
 
     app.add_handler(conv)
+    #Удалять тут
+    def main():
+    application = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
+    # <-- здесь добавляете все ваши CommandHandler, CallbackQueryHandler и т.д.
+    return application
 
-   # Запуск бота
-if __name__ == "__main__":
-    # сразу же удаляем webhook (если он был установлен ранее)
-    # и сбрасываем все накопившиеся апдейты
-    # прежде чем стартовать polling
-    app.bot.delete_webhook()
-    app.run_polling(drop_pending_updates=True)
+ if __name__ == "__main__":
+    # Получаем наш Application
+    application = main()
 
+    # Удаляем старый webhook (чтобы не было двойного получения апдейтов)
+    application.bot.delete_webhook()
+
+    # Запускаем polling
+    # drop_pending_updates=True сбрасывает все «зависшие» апдейты,
+    # чтобы бот начал с чистого листа
+    application.run_polling(drop_pending_updates=True)
