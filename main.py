@@ -233,7 +233,7 @@ async def music_confirm(update, ctx):
         dj=dj_schedule[datetime.now().weekday()]
         await update.message.reply_text(t(uid,"thank_you"))
         await ctx.bot.send_message(
-            chat_id=os.getenv("GROUP_CHAT_ID"),
+            chat_id=os.getenv("-1002705399393"),
             text=f"Заказ музыки: {track}, DJ: {dj}"
         )
     else:
