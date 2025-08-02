@@ -206,7 +206,14 @@ async def review_anon(update, context) -> int:
 
 # === Запуск приложения ===
     def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    # --- Тело функции main() обязательно с отступом ---
+    application = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
+
+    # Регистрируем хендлеры
+    application.add_handler(CommandHandler("start", start))
+    # … другие обработчики …
+
+    return application  # возвращаем собранный экземпляр
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
