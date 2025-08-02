@@ -1,4 +1,3 @@
-# main.py
 import os
 import logging
 from datetime import datetime
@@ -100,9 +99,19 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "Отменено." if context.user_data.get("lang")=="ru" else "Cancelled."
     await update.message.reply_text(text)
     return ConversationHandler.END
+    
+async def on_startup(app):
+    # убираем любой предыдущий webhook и сбрасываем очереди
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    logging.info("✅ Webhook deleted, pending updates dropped.")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+        # <-- регистрируем hook перед add_handler
+    app.post_init(on_startup)
+
+    # … все ваши handlers …
+    app.run_polling()
 
     # Конверсационный handler для /start → выбор языка → имя → меню → музыка
     conv = ConversationHandler(
