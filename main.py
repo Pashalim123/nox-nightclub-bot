@@ -226,7 +226,7 @@ group_msg = (
     f"Предоплата: 1000 сом"
 )
 await context.bot.send_message(
-    chat_id=os.getenv(""),
+    chat_id=os.getenv("-1002705399393"),
     text=group_msg,
     parse_mode="HTML"
 )
